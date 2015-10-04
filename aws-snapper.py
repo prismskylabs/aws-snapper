@@ -67,15 +67,16 @@ class AwsSnapper(object):
         instances = ec2.instances.all()
         for instance in instances:
             i_tags = instance.tags
-            i_ignore = True
+            i_ignore = False
             i_snap_interval = 0
             i_snap_retain = 0
             i_name = instance.id
             for i_tag in i_tags:
-                if i_tag['Key'] == tag_interval:
-                    i_ignore = False
+                if i_tag['Key'] == tag_ignore:
+                    i_ignore = True
+                if i_tag['Key'] == tag_interval and i_tag['Value'] != '':
                     i_snap_interval = i_tag['Value']
-                if i_tag['Key'] == tag_retain:
+                if i_tag['Key'] == tag_retain and i_tag['Value'] != '':
                     i_snap_retain = i_tag['Value']
                 if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
                     i_name = '{} ({})'.format(i_tag['Value'], instance.id)
@@ -160,7 +161,7 @@ class AwsSnapper(object):
             """.format(**self.report))
 
         if len(self.report['problem_volumes']) > 0:
-            report += '> \n> \n> Volumes with tags that prevented snapshot management: \n'
+            report += '> \n> \n> Volumes with tag combinations preventing snapshot management:\n'
             for vol in self.report['problem_volumes']:
                 report += '>   * {}\n'.format(vol)
 
