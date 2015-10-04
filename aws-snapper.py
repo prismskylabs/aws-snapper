@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from __future__ import absolute_import
 import argparse
 import datetime
@@ -16,6 +17,7 @@ class AwsSnapper(object):
         self.tag_prefix = None
         self.ec2_regions = list()
         self.sns_arn = None
+        self.sns_region = None
 
         self.report = {
             'started': datetime.datetime.now(),
@@ -37,6 +39,9 @@ class AwsSnapper(object):
                             default=[None])
         parser.add_argument('--sns-arn', dest='sns_arn', action='store', default=None,
                             help='SNS ARN for reporting results', metavar='ARN')
+        parser.add_argument('--sns-region', dest='sns_region', action='store', default=None,
+                            help='Region of SNS Topic; required if specified SNS ARN is not in '
+                                 'default AWS CLI region', metavar='REGION')
         parser.add_argument('--prefix', dest='tag_prefix', action='store', default='autosnap',
                             help='Prefix to use for AWS tags on snapshots', metavar='PREFIX')
         parser.add_argument('--version', action='version',
@@ -44,6 +49,7 @@ class AwsSnapper(object):
         settings = parser.parse_args()
 
         self.sns_arn = settings.sns_arn
+        self.sns_region = settings.sns_region
         self.tag_prefix = settings.tag_prefix
         for region in settings.regions:
             self.ec2_regions.append(region)
@@ -166,7 +172,10 @@ class AwsSnapper(object):
                 report += '>   * {}\n'.format(vol)
 
         if self.sns_arn is not None:
-            sns = boto3.resource('sns')
+            if self.sns_region is not None:
+                sns = boto3.resource('sns', region_name=self.sns_region)
+            else:
+                sns = boto3.resource('sns')
             topic = sns.Topic(self.sns_arn)
             topic.publish(Message=report, Subject='AWS Snapshot Report')
             logging.warn('Snapshot run completed at {}. Report sent via SNS.'.format(
