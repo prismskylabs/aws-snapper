@@ -8,7 +8,7 @@ import boto3
 
 
 class AwsSnapper(object):
-    VERSION = '1'
+    VERSION = '0.1'
 
     def __init__(self):
         self._loaded = False
@@ -17,19 +17,15 @@ class AwsSnapper(object):
         self.ec2_regions = list()
         self.sns_arn = None
 
-        # self.report = {
-        #     'started': datetime.datetime.now(),
-        #     'finished': None,
-        #     'instances': 0,
-        #     'instances_ignored': 0,
-        #     'volumes': 0,
-        #     'volumes_ignored': 0,
-        #     'volumes_misconfigured': list(),
-        #     'volumes_managed': 0,
-        #     'snapshots_created': 0,
-        #     'snapshots_early': 0,
-        #     'snapshots_deleted': 0,
-        # }
+        self.report = {
+            'started': datetime.datetime.now(),
+            'finished': None,
+            'instances_managed': 0,
+            'volumes_managed': 0,
+            'snaps_created': 0,
+            'snaps_deleted': 0,
+            'problem_volumes': list()
+        }
 
     def _load_config(self):
         if self._loaded:
@@ -71,18 +67,22 @@ class AwsSnapper(object):
         instances = ec2.instances.all()
         for instance in instances:
             i_tags = instance.tags
-            i_ignore = False
+            i_ignore = True
             i_snap_interval = 0
             i_snap_retain = 0
+            i_name = instance.id
             for i_tag in i_tags:
-                if i_tag['Key'] == tag_ignore:
-                    i_ignore = True
                 if i_tag['Key'] == tag_interval:
+                    i_ignore = False
                     i_snap_interval = i_tag['Value']
                 if i_tag['Key'] == tag_retain:
                     i_snap_retain = i_tag['Value']
+                if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
+                    i_name = '{} ({})'.format(i_tag['Value'], instance.id)
             if i_ignore:
                 continue
+
+            self.report['instances_managed'] += 1
 
             volumes = ec2.volumes.filter(Filters=[{'Name': 'attachment.instance-id',
                                                    'Values': [instance.id]}])
@@ -91,7 +91,7 @@ class AwsSnapper(object):
                 v_snap_retain = i_snap_retain
                 v_tags = volume.tags
                 v_ignore = False
-                v_name = ''
+                v_name = volume.id
                 for v_tag in v_tags:
                     if v_tag['Key'] == tag_ignore:
                         v_ignore = True
@@ -100,16 +100,15 @@ class AwsSnapper(object):
                     if v_tag['Key'] == tag_retain:
                         v_snap_retain = v_tag['Value']
                     if v_tag['Key'] == 'Name':
-                        v_name = v_tag['Value']
+                        v_name = '{} ({})'.format(v_tag['Value'], volume.id)
                 if v_ignore:
                     continue
 
                 if v_snap_interval == 0 or v_snap_retain == 0:
-                    # weird settings, don't proceed
+                    self.report['problem_volumes'].append(volume.id)
                     continue
 
-                if v_name == '':
-                    v_name = volume.id
+                self.report['volumes_managed'] += 1
 
                 snap_collection = ec2.snapshots.filter(Filters=[{'Name': 'volume-id',
                                                                  'Values': [volume.id]},
@@ -133,6 +132,7 @@ class AwsSnapper(object):
                     snapshot = volume.create_snapshot(Description=description)
                     snapshot.create_tags(Tags=[{'Key': 'Name', 'Value': short_description},
                                                {'Key': 'snapshot_tool', 'Value': self.tag_prefix}])
+                    self.report['snaps_created'] += 1
                 else:
                     # too soon
                     pass
@@ -140,43 +140,44 @@ class AwsSnapper(object):
                 while len(snap_list) > int(v_snap_retain):
                     snapshot_to_delete = snap_list.pop()
                     snapshot_to_delete.delete()
-                    # increment deleted counter
-        pass
-        # done
+                    self.report['snaps_deleted'] += 1
 
+    def generate_report(self):
+        self.report['finished'] = datetime.datetime.now()
 
-    # def _generate_report(self):
-    #     report = textwrap.dedent("""\
-    #         AWS Snapper Details
-    #
-    #         Run Started: {started}
-    #         Run Finished: {finished}
-    #
-    #         Snapshots created: {snapshots_created} ({volumes_managed} possible)
-    #         Snapshots deleted: {snapshots_deleted}
-    #
-    #         Instances found: {instances} ({instances_ignored} ignored)
-    #         Volumes found: {volumes} ({volumes_ignored} ignored)
-    #
-    #         """.format(**self.report))
-    #
-    #     if len(self.report['volumes_misconfigured']) > 0:
-    #         report += 'Misconfigured volumes: \n'
-    #         for vol in self.report['volumes_misconfigured']:
-    #             report += '  * {}\n'.format(vol)
-    #
-    #     if self.sns_arn is not None:
-    #         self._sns_client.publish(self.sns_arn, report, 'AWS Snapshot Report')
-    #         logging.warn('Snapshot run completed successfully at {}. Details sent via SNS.'.
-    # format(
-    #             self.report['finished']))
-    #     else:
-    #         logging.warn(report)
+        report = textwrap.dedent("""\
+            AWS Snapshot Report
+
+            Run Started: {started}
+            Run Finished: {finished}
+
+            Snapshots created: {snaps_created}
+            Snapshots deleted: {snaps_deleted}
+
+            >  Details:
+            >    Instances managed: {instances_managed}
+            >    Volumes managed: {volumes_managed}
+            """.format(**self.report))
+
+        if len(self.report['problem_volumes']) > 0:
+            report += '> \n> \n> Volumes with tags that prevented snapshot management: \n'
+            for vol in self.report['problem_volumes']:
+                report += '>   * {}\n'.format(vol)
+
+        if self.sns_arn is not None:
+            sns = boto3.resource('sns')
+            topic = sns.Topic(self.sns_arn)
+            topic.publish(Message=report, Subject='AWS Snapshot Report')
+            logging.warn('Snapshot run completed at {}. Report sent via SNS.'.format(
+                self.report['finished']))
+        else:
+            logging.warn(report)
 
     def daily_run(self):
         self._load_config()
         for region in self.ec2_regions:
             self.scan_and_snap(region)
+        self.generate_report()
 
 if __name__ == '__main__':
     snapper = AwsSnapper()
