@@ -81,6 +81,10 @@ To use SNS reporting, make sure the credentials (`~/.aws`) or EC2 IAM role can p
 topic and specify the topic using its ARN on the command line with
 `--sns-arn arn:aws:sns:region:account-id:topicname`.
 
+**Note:** If you have not configured a default AWS CLI region (using the `aws configure` command) or
+the SNS topic is in a region other than the AWS CLI default, you must also specify its region
+on the command line with `--sns-region`.
+
 ### Tag Prefix (optional)
 
 aws-snapper uses AWS resource tags to keep track of instances, volumes, and snapshots it is
@@ -114,7 +118,7 @@ Use default settings but send a report via SNS when finished:
 Everything at once:
 
     $ ./aws-snapper.py --sns-arn arn:aws:sns:us-east-1:123456789012:maintenance-alerts
-            --prefix StagingSnapshotter eu-central-1 ap-northeast-1
+            --sns-region us-east-1 --prefix StagingSnapshotter eu-central-1 ap-northeast-1
 
 ## Running aws-snapper In A Container
 

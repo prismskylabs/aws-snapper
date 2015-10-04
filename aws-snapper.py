@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 from __future__ import absolute_import
 import argparse
 import datetime
@@ -16,6 +17,7 @@ class AwsSnapper(object):
         self.tag_prefix = None
         self.ec2_regions = list()
         self.sns_arn = None
+        self.sns_region = None
 
         self.report = {
             'started': datetime.datetime.now(),
@@ -37,6 +39,9 @@ class AwsSnapper(object):
                             default=[None])
         parser.add_argument('--sns-arn', dest='sns_arn', action='store', default=None,
                             help='SNS ARN for reporting results', metavar='ARN')
+        parser.add_argument('--sns-region', dest='sns_region', action='store', default=None,
+                            help='Region of SNS Topic; required if specified SNS ARN is not in '
+                                 'default AWS CLI region', metavar='REGION')
         parser.add_argument('--prefix', dest='tag_prefix', action='store', default='autosnap',
                             help='Prefix to use for AWS tags on snapshots', metavar='PREFIX')
         parser.add_argument('--version', action='version',
@@ -44,6 +49,7 @@ class AwsSnapper(object):
         settings = parser.parse_args()
 
         self.sns_arn = settings.sns_arn
+        self.sns_region = settings.sns_region
         self.tag_prefix = settings.tag_prefix
         for region in settings.regions:
             self.ec2_regions.append(region)
@@ -67,15 +73,16 @@ class AwsSnapper(object):
         instances = ec2.instances.all()
         for instance in instances:
             i_tags = instance.tags
-            i_ignore = True
+            i_ignore = False
             i_snap_interval = 0
             i_snap_retain = 0
             i_name = instance.id
             for i_tag in i_tags:
-                if i_tag['Key'] == tag_interval:
-                    i_ignore = False
+                if i_tag['Key'] == tag_ignore:
+                    i_ignore = True
+                if i_tag['Key'] == tag_interval and i_tag['Value'] != '':
                     i_snap_interval = i_tag['Value']
-                if i_tag['Key'] == tag_retain:
+                if i_tag['Key'] == tag_retain and i_tag['Value'] != '':
                     i_snap_retain = i_tag['Value']
                 if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
                     i_name = '{} ({})'.format(i_tag['Value'], instance.id)
@@ -160,12 +167,15 @@ class AwsSnapper(object):
             """.format(**self.report))
 
         if len(self.report['problem_volumes']) > 0:
-            report += '> \n> \n> Volumes with tags that prevented snapshot management: \n'
+            report += '> \n> \n> Volumes with tag combinations preventing snapshot management:\n'
             for vol in self.report['problem_volumes']:
                 report += '>   * {}\n'.format(vol)
 
         if self.sns_arn is not None:
-            sns = boto3.resource('sns')
+            if self.sns_region is not None:
+                sns = boto3.resource('sns', region_name=self.sns_region)
+            else:
+                sns = boto3.resource('sns')
             topic = sns.Topic(self.sns_arn)
             topic.publish(Message=report, Subject='AWS Snapshot Report')
             logging.warn('Snapshot run completed at {}. Report sent via SNS.'.format(
