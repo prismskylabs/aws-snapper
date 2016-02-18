@@ -189,6 +189,6 @@ class AwsSnapper(object):
             self.scan_and_snap(region)
         self.generate_report()
 
-if __name__ == '__main__':
+def main(event, context):
     snapper = AwsSnapper()
     snapper.daily_run()
