@@ -85,7 +85,8 @@ class AwsSnapper(object):
                 if i_tag['Key'] == tag_retain and i_tag['Value'] != '':
                     i_snap_retain = i_tag['Value']
                 if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
-                    i_name = '{} ({})'.format(i_tag['Value'], instance.id)
+                    i_name = '{}-({})'.format(i_tag['Value'], instance.id)
+                    i_name_only = '{}'.format(i_tag['Value'])
             if i_ignore:
                 continue
 
@@ -134,8 +135,8 @@ class AwsSnapper(object):
                         snap_needed = True
 
                 if snap_needed:
-                    description = '{}: {} from {}'.format(self.tag_prefix, v_name, today)
-                    short_description = '{}-{}'.format(today, v_name)
+                    description = '{}: {} from {} of {}'.format(self.tag_prefix, v_name, today, i_name)
+                    short_description = '{}-{}-{}'.format(today, v_name, i_name_only)
                     snapshot = volume.create_snapshot(Description=description)
                     snapshot.create_tags(Tags=[{'Key': 'Name', 'Value': short_description},
                                                {'Key': 'snapshot_tool', 'Value': self.tag_prefix}])
@@ -192,3 +193,6 @@ class AwsSnapper(object):
 def main(event, context):
     snapper = AwsSnapper()
     snapper.daily_run()
+
+if __name__ == '__main__':
+    main(0, 0)
