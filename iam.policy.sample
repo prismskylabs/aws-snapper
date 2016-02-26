@@ -1,17 +1,14 @@
 {
+  "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "StatementDescriptionGoesHere",
-      "Action": [
-        "sns:Publish"
-      ],
+      "Sid": "EnablePublishForSnapshotTool",
+      "Action": "sns:Publish",
       "Effect": "Allow",
-      "Resource": [
-        "arn:aws:sns:us-west-1:123456789012:topicname"
-      ]
+      "Resource": "arn:aws:sns:us-west-1:123456789012:topicname"
     },
     {
-      "Sid": "AnotherStatementDescription",
+      "Sid": "EnableSnapshotManagement",
       "Effect": "Allow",
       "Action": [
         "ec2:CopySnapshot",
@@ -32,7 +29,8 @@
         "ec2:ModifySnapshotAttribute"
       ],
       "Resource": [
-        "arn:aws:ec2:ap-southeast-2:123456789012:*"
+        "arn:aws:ec2:ap-southeast-2:123456789012:*",
+        "arn:aws:ec2:eu-central-1:123456789012:*"
       ]
     }
   ]
