@@ -1,0 +1,5 @@
+{
+  "tag_prefix": "lambdasnapper",
+  "ec2_regions": ["us-west-1"],
+  "sns_arn": "arn:aws:sns:us-west-1:1234567890:sometopic"
+}

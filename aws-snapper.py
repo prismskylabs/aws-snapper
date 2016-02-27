@@ -17,7 +17,6 @@ class AwsSnapper(object):
         self.tag_prefix = None
         self.ec2_regions = list()
         self.sns_arn = None
-        self.sns_region = None
 
         self.report = {
             'started': datetime.datetime.now(),
@@ -39,9 +38,6 @@ class AwsSnapper(object):
                             default=[None])
         parser.add_argument('--sns-arn', dest='sns_arn', action='store', default=None,
                             help='SNS ARN for reporting results', metavar='ARN')
-        parser.add_argument('--sns-region', dest='sns_region', action='store', default=None,
-                            help='Region of SNS Topic; required if specified SNS ARN is not in '
-                                 'default AWS CLI region', metavar='REGION')
         parser.add_argument('--prefix', dest='tag_prefix', action='store', default='autosnap',
                             help='Prefix to use for AWS tags on snapshots', metavar='PREFIX')
         parser.add_argument('--version', action='version',
@@ -49,11 +45,16 @@ class AwsSnapper(object):
         settings = parser.parse_args()
 
         self.sns_arn = settings.sns_arn
-        self.sns_region = settings.sns_region
         self.tag_prefix = settings.tag_prefix
         for region in settings.regions:
             self.ec2_regions.append(region)
 
+        self._loaded = True
+
+    def configure_from_lambda_event(self, event_details):
+        for setting in ['tag_prefix', 'sns_arn', 'ec2_regions']:
+            if setting in event_details:
+                self.__setattr__(setting, event_details[setting])
         self._loaded = True
 
     def scan_and_snap(self, region):
@@ -173,10 +174,8 @@ class AwsSnapper(object):
                 report += '>   * {}\n'.format(vol)
 
         if self.sns_arn is not None:
-            if self.sns_region is not None:
-                sns = boto3.resource('sns', region_name=self.sns_region)
-            else:
-                sns = boto3.resource('sns')
+            region = self.sns_arn.split(':')[3]  # brute force the SNS region
+            sns = boto3.resource('sns', region_name=region)
             topic = sns.Topic(self.sns_arn)
             topic.publish(Message=report, Subject='AWS Snapshot Report')
             logging.warn('Snapshot run completed at {}. Report sent via SNS.'.format(
@@ -190,9 +189,12 @@ class AwsSnapper(object):
             self.scan_and_snap(region)
         self.generate_report()
 
-def main(event, context):
+
+def lambda_handler(event, context):
     snapper = AwsSnapper()
+    snapper.configure_from_lambda_event(event)
     snapper.daily_run()
 
 if __name__ == '__main__':
-    main(0, 0)
+    s = AwsSnapper()
+    s.daily_run()
