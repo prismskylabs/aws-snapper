@@ -14,6 +14,15 @@ AWS CLI) and therefore requires slightly less effort to configure than the earli
 
 ## Usage
 
+**Note:** You really, really, really should be running this as an AWS Lambda
+function. [Details on how to set that up in a separate README.](LAMBDA.md).
+The remainder of this document describes how to run it as a plain old script.
+
+AWS Lambda lets you run the snapshot job as needed without a server, virtual
+machine, or EC2 instance. It just runs In The Cloud magically. It costs
+a **fraction of a cent per month** to run this multiple times per day, compared
+to the dollars-per-month for the least expensive EC2 instance.
+
 ### Authentication
 
 aws-snapper authenticates using [botocore](http://botocore.readthedocs.org), so there's no reason
