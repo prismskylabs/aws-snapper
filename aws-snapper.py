@@ -22,6 +22,13 @@ DEFAULTS = {
 
 
 class AwsSnapper(object):
+    per_region_template = {
+        'instances_managed': 0,
+        'volumes_managed': 0,
+        'snaps_created': 0,
+        'snaps_deleted': 0,
+        'problem_volumes': None,
+    }
 
     def __init__(self):
         self._loaded = False
@@ -33,12 +40,7 @@ class AwsSnapper(object):
         self.report = {
             'started': datetime.datetime.now(),
             'finished': None,
-            'instances_managed': 0,
-            'volumes_managed': 0,
-            'snaps_created': 0,
-            'snaps_deleted': 0,
-            'problem_volumes': list(),
-            'regions_processed': list(),
+            'regions': dict(),
             'schedule_name': None,
         }
 
@@ -88,7 +90,8 @@ class AwsSnapper(object):
         if not self._loaded:
             self._load_config()
 
-        self.report['regions_processed'].append(region)
+        self.report['regions'][region] = self.per_region_template.copy()
+        self.report['regions'][region]['problem_volumes'] = list()
 
         tag_interval = '{prefix}'.format(prefix=self.tag_prefix)
         tag_retain = '{prefix}_retain'.format(prefix=self.tag_prefix)
@@ -122,7 +125,7 @@ class AwsSnapper(object):
             if i_ignore:
                 continue
 
-            self.report['instances_managed'] += 1
+            self.report['regions'][region]['instances_managed'] += 1
 
             volumes = ec2.volumes.filter(Filters=[{'Name': 'attachment.instance-id',
                                                    'Values': [instance.id]}])
@@ -147,10 +150,10 @@ class AwsSnapper(object):
                     continue
 
                 if v_snap_interval == 0 or v_snap_retain == 0:
-                    self.report['problem_volumes'].append(volume.id)
+                    self.report['regions'][region]['problem_volumes'].append(volume.id)
                     continue
 
-                self.report['volumes_managed'] += 1
+                self.report['regions'][region]['volumes_managed'] += 1
 
                 snap_collection = ec2.snapshots.filter(Filters=[{'Name': 'volume-id',
                                                                  'Values': [volume.id]},
@@ -174,7 +177,7 @@ class AwsSnapper(object):
                     snapshot = volume.create_snapshot(Description=description)
                     snapshot.create_tags(Tags=[{'Key': 'Name', 'Value': short_description},
                                                {'Key': 'snapshot_tool', 'Value': self.tag_prefix}])
-                    self.report['snaps_created'] += 1
+                    self.report['regions'][region]['snaps_created'] += 1
                 else:
                     # too soon
                     pass
@@ -182,7 +185,7 @@ class AwsSnapper(object):
                 while len(snap_list) > int(v_snap_retain):
                     snapshot_to_delete = snap_list.pop()
                     snapshot_to_delete.delete()
-                    self.report['snaps_deleted'] += 1
+                    self.report['regions'][region]['snaps_deleted'] += 1
 
     def generate_report(self):
         self.report['finished'] = datetime.datetime.now()
@@ -194,21 +197,24 @@ class AwsSnapper(object):
 
             Run Started: {started}
             Run Finished: {finished}
-
-            Regions processed: {regions_processed}
-
-            Snapshots created: {snaps_created}
-            Snapshots deleted: {snaps_deleted}
-
-            >  Details:
-            >    Instances managed: {instances_managed}
-            >    Volumes managed: {volumes_managed}
             """.format(**self.report))
 
-        if len(self.report['problem_volumes']) > 0:
-            report += '> \n> \n> Volumes with tag combinations preventing snapshot management:\n'
-            for vol in self.report['problem_volumes']:
-                report += '>   * {}\n'.format(vol)
+        for region in self.report['regions']:
+            report += textwrap.dedent("""
+                *** Region Report: {region}
+
+                Snapshots created: {snaps_created}
+                Snapshots deleted: {snaps_deleted}
+
+                >  Details:
+                >    Instances managed: {instances_managed}
+                >    Volumes managed: {volumes_managed}
+                """.format(region=region, **self.report['regions'][region]))
+
+            if len(self.report['regions'][region]['problem_volumes']) > 0:
+                report += '> \n> \n> Volumes with tag combinations preventing snapshot management:\n'
+                for vol in self.report['regions'][region]['problem_volumes']:
+                    report += '>   * {}\n'.format(vol)
 
         if self.sns_arn is not None:
             region = self.sns_arn.split(':')[3]  # brute force the SNS region
