@@ -8,8 +8,19 @@ import logging
 import boto3
 
 
+VERSION = '0.2'
+DEFAULTS = {
+    'ec2_regions': [
+        'us-east-1'
+    ],
+    'tag_prefix': [
+        'autosnap'
+    ],
+    'sns_arn': None
+}
+
+
 class AwsSnapper(object):
-    VERSION = '0.1'
 
     def __init__(self):
         self._loaded = False
@@ -32,16 +43,20 @@ class AwsSnapper(object):
         if self._loaded:
             return
 
-        parser = argparse.ArgumentParser(description='Create and manage scheduled EBS snapshots')
+        parser = argparse.ArgumentParser(
+            description='Create and expire EBS snapshots'
+        )
         parser.add_argument('regions', metavar='region', nargs='*',
                             help='EC2 Region(s) to process for snapshots',
-                            default=[None])
-        parser.add_argument('--sns-arn', dest='sns_arn', action='store', default=None,
-                            help='SNS ARN for reporting results', metavar='ARN')
-        parser.add_argument('--prefix', dest='tag_prefix', action='store', default='autosnap',
-                            help='Prefix to use for AWS tags on snapshots', metavar='PREFIX')
+                            default=DEFAULTS['ec2_regions'])
+        parser.add_argument('--sns-arn', dest='sns_arn', action='store',
+                            default=DEFAULTS['sns_arn'], metavar='ARN',
+                            help='SNS ARN for reporting results')
+        parser.add_argument('--prefix', dest='tag_prefix', action='store',
+                            default=DEFAULTS['tag_prefix'], metavar='PREFIX',
+                            help='Prefix to use for AWS tags on snapshots')
         parser.add_argument('--version', action='version',
-                            version='AwsSnapper v{}'.format(self.VERSION))
+                            version='AwsSnapper v{}'.format(VERSION))
         settings = parser.parse_args()
 
         self.sns_arn = settings.sns_arn
