@@ -16,7 +16,8 @@ DEFAULTS = {
     'tag_prefix': [
         'autosnap'
     ],
-    'sns_arn': None
+    'sns_arn': None,
+    'schedule_name': None,
 }
 
 
@@ -36,7 +37,9 @@ class AwsSnapper(object):
             'volumes_managed': 0,
             'snaps_created': 0,
             'snaps_deleted': 0,
-            'problem_volumes': list()
+            'problem_volumes': list(),
+            'regions_processed': list(),
+            'schedule_name': None,
         }
 
     def _load_config(self):
@@ -55,12 +58,21 @@ class AwsSnapper(object):
         parser.add_argument('--prefix', dest='tag_prefix', action='store',
                             default=DEFAULTS['tag_prefix'], metavar='PREFIX',
                             help='Prefix to use for AWS tags on snapshots')
+        parser.add_argument('--name', dest='schedule_name', action='store',
+                            default=DEFAULTS['schedule_name'], metavar='NAME',
+                            help='Job name to use for report emails')
         parser.add_argument('--version', action='version',
                             version='AwsSnapper v{}'.format(VERSION))
         settings = parser.parse_args()
 
         self.sns_arn = settings.sns_arn
         self.tag_prefix = settings.tag_prefix
+
+        if settings.schedule_name:
+            self.report['schedule_name'] = settings.schedule_name
+        else:
+            self.report['schedule_name'] = 'Default'
+
         for region in settings.regions:
             self.ec2_regions.append(region)
 
@@ -75,6 +87,8 @@ class AwsSnapper(object):
     def scan_and_snap(self, region):
         if not self._loaded:
             self._load_config()
+
+        self.report['regions_processed'].append(region)
 
         tag_interval = '{prefix}'.format(prefix=self.tag_prefix)
         tag_retain = '{prefix}_retain'.format(prefix=self.tag_prefix)
@@ -172,8 +186,12 @@ class AwsSnapper(object):
         report = textwrap.dedent("""\
             AWS Snapshot Report
 
+            Job name: {schedule_name}
+
             Run Started: {started}
             Run Finished: {finished}
+
+            Regions processed: {regions_processed}
 
             Snapshots created: {snaps_created}
             Snapshots deleted: {snaps_deleted}
