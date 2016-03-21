@@ -103,6 +103,8 @@ class AwsSnapper(object):
         instances = ec2.instances.all()
         for instance in instances:
             i_tags = instance.tags
+            if not i_tags:
+                continue
             i_ignore = False
             i_snap_interval = 0
             i_snap_retain = 0
@@ -125,9 +127,11 @@ class AwsSnapper(object):
             volumes = ec2.volumes.filter(Filters=[{'Name': 'attachment.instance-id',
                                                    'Values': [instance.id]}])
             for volume in volumes:
+                v_tags = volume.tags
+                if not v_tags:
+                    continue
                 v_snap_interval = i_snap_interval
                 v_snap_retain = i_snap_retain
-                v_tags = volume.tags
                 v_ignore = False
                 v_name = volume.id
                 for v_tag in v_tags:
