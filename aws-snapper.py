@@ -192,12 +192,13 @@ class AwsSnapper(object):
 
         report = textwrap.dedent("""\
             AWS Snapshot Report
+            Snapshot Tool Version {version}
 
             Job name: {schedule_name}
 
             Run Started: {started}
             Run Finished: {finished}
-            """.format(**self.report))
+            """.format(version=VERSION, **self.report))
 
         for region in self.report['regions']:
             report += textwrap.dedent("""
