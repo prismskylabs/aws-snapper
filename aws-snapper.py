@@ -102,22 +102,21 @@ class AwsSnapper(object):
         instances = ec2.instances.all()
         for instance in instances:
             i_tags = instance.tags
-            if not i_tags:
-                continue
             i_ignore = False
             i_snap_interval = 0
             i_snap_retain = 0
             i_name = instance.id
-            for i_tag in i_tags:
-                if i_tag['Key'] == tag_ignore:
-                    i_ignore = True
-                if i_tag['Key'] == tag_interval and i_tag['Value'] != '':
-                    i_snap_interval = i_tag['Value']
-                if i_tag['Key'] == tag_retain and i_tag['Value'] != '':
-                    i_snap_retain = i_tag['Value']
-                if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
-                    i_name = '{}-({})'.format(i_tag['Value'], instance.id)
-                    i_name_only = '{}'.format(i_tag['Value'])
+            if i_tags:
+                for i_tag in i_tags:
+                    if i_tag['Key'] == tag_ignore:
+                        i_ignore = True
+                    if i_tag['Key'] == tag_interval and i_tag['Value'] != '':
+                        i_snap_interval = i_tag['Value']
+                    if i_tag['Key'] == tag_retain and i_tag['Value'] != '':
+                        i_snap_retain = i_tag['Value']
+                    if i_tag['Key'] == 'Name' and len(i_tag['Value']) > 2:
+                        i_name = '{}-({})'.format(i_tag['Value'], instance.id)
+                        i_name_only = '{}'.format(i_tag['Value'])
             if i_ignore:
                 continue
 
@@ -127,21 +126,20 @@ class AwsSnapper(object):
                                                    'Values': [instance.id]}])
             for volume in volumes:
                 v_tags = volume.tags
-                if not v_tags:
-                    continue
                 v_snap_interval = i_snap_interval
                 v_snap_retain = i_snap_retain
                 v_ignore = False
                 v_name = volume.id
-                for v_tag in v_tags:
-                    if v_tag['Key'] == tag_ignore:
-                        v_ignore = True
-                    if v_tag['Key'] == tag_interval:
-                        v_snap_interval = v_tag['Value']
-                    if v_tag['Key'] == tag_retain:
-                        v_snap_retain = v_tag['Value']
-                    if v_tag['Key'] == 'Name':
-                        v_name = '{} ({})'.format(v_tag['Value'], volume.id)
+                if v_tags:
+                    for v_tag in v_tags:
+                        if v_tag['Key'] == tag_ignore:
+                            v_ignore = True
+                        if v_tag['Key'] == tag_interval:
+                            v_snap_interval = v_tag['Value']
+                        if v_tag['Key'] == tag_retain:
+                            v_snap_retain = v_tag['Value']
+                        if v_tag['Key'] == 'Name':
+                            v_name = '{} ({})'.format(v_tag['Value'], volume.id)
                 if v_ignore:
                     continue
 
