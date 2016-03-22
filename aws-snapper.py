@@ -13,11 +13,9 @@ DEFAULTS = {
     'ec2_regions': [
         'us-east-1'
     ],
-    'tag_prefix': [
-        'autosnap'
-    ],
+    'tag_prefix': 'autosnap',
     'sns_arn': None,
-    'schedule_name': None,
+    'schedule_name': 'Default',
 }
 
 
@@ -36,12 +34,12 @@ class AwsSnapper(object):
         self.tag_prefix = None
         self.ec2_regions = list()
         self.sns_arn = None
+        self.schedule_name = None
 
         self.report = {
             'started': datetime.datetime.now(),
             'finished': None,
             'regions': dict(),
-            'schedule_name': None,
         }
 
     def _load_config(self):
@@ -69,11 +67,7 @@ class AwsSnapper(object):
 
         self.sns_arn = settings.sns_arn
         self.tag_prefix = settings.tag_prefix
-
-        if settings.schedule_name:
-            self.report['schedule_name'] = settings.schedule_name
-        else:
-            self.report['schedule_name'] = 'Default'
+        self.schedule_name = settings.schedule_name
 
         for region in settings.regions:
             self.ec2_regions.append(region)
@@ -81,9 +75,11 @@ class AwsSnapper(object):
         self._loaded = True
 
     def configure_from_lambda_event(self, event_details):
-        for setting in ['tag_prefix', 'sns_arn', 'ec2_regions']:
+        for setting in DEFAULTS.keys():
             if setting in event_details:
                 self.__setattr__(setting, event_details[setting])
+            else:
+                self.__setattr__(setting, DEFAULTS[setting])
         self._loaded = True
 
     def scan_and_snap(self, region):
@@ -194,11 +190,11 @@ class AwsSnapper(object):
             AWS Snapshot Report
             Snapshot Tool Version {version}
 
-            Job name: {schedule_name}
+            Job name: {job}
 
             Run Started: {started}
             Run Finished: {finished}
-            """.format(version=VERSION, **self.report))
+            """.format(job=self.schedule_name, version=VERSION, **self.report))
 
         for region in self.report['regions']:
             report += textwrap.dedent("""
