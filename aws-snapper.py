@@ -5,7 +5,6 @@ import datetime
 import textwrap
 import logging
 
-import pytz
 import boto3
 
 
@@ -21,6 +20,21 @@ DEFAULTS = {
 }
 
 
+# A UTC class.
+# from http://stackoverflow.com/questions/2331592/datetime-datetime-utcnow-why-no-tzinfo
+class UTC(datetime.tzinfo):
+    ZERO = datetime.timedelta(0)
+    """UTC"""
+    def utcoffset(self, dt):
+        return self.ZERO
+
+    def tzname(self, dt):
+        return "UTC"
+
+    def dst(self, dt):
+        return self.ZERO
+
+
 class AwsSnapper(object):
     per_region_template = {
         'instances_managed': 0,
@@ -29,6 +43,7 @@ class AwsSnapper(object):
         'snaps_deleted': 0,
         'problem_volumes': None,
     }
+    tz = UTC()
 
     def __init__(self):
         self._loaded = False
@@ -40,7 +55,7 @@ class AwsSnapper(object):
         self.interval = 0
 
         self.report = {
-            'started': datetime.datetime.now(pytz.utc),
+            'started': datetime.datetime.now(self.tz),
             'finished': None,
             'regions': dict(),
         }
@@ -206,7 +221,7 @@ class AwsSnapper(object):
                     self.report['regions'][region]['snaps_deleted'] += 1
 
     def generate_report(self):
-        self.report['finished'] = datetime.datetime.now(pytz.utc)
+        self.report['finished'] = datetime.datetime.now(self.tz)
 
         report = textwrap.dedent("""\
             AWS Snapshot Report
