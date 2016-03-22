@@ -15,7 +15,7 @@ DEFAULTS = {
     ],
     'tag_prefix': 'autosnap',
     'sns_arn': None,
-    'schedule_name': None,
+    'schedule_name': 'Default',
 }
 
 
@@ -34,12 +34,12 @@ class AwsSnapper(object):
         self.tag_prefix = None
         self.ec2_regions = list()
         self.sns_arn = None
+        self.schedule_name = None
 
         self.report = {
             'started': datetime.datetime.now(),
             'finished': None,
             'regions': dict(),
-            'schedule_name': None,
         }
 
     def _load_config(self):
@@ -67,11 +67,7 @@ class AwsSnapper(object):
 
         self.sns_arn = settings.sns_arn
         self.tag_prefix = settings.tag_prefix
-
-        if settings.schedule_name:
-            self.report['schedule_name'] = settings.schedule_name
-        else:
-            self.report['schedule_name'] = 'Default'
+        self.schedule_name = settings.schedule_name
 
         for region in settings.regions:
             self.ec2_regions.append(region)
@@ -194,11 +190,11 @@ class AwsSnapper(object):
             AWS Snapshot Report
             Snapshot Tool Version {version}
 
-            Job name: {schedule_name}
+            Job name: {job}
 
             Run Started: {started}
             Run Finished: {finished}
-            """.format(version=VERSION, **self.report))
+            """.format(job=self.schedule_name, version=VERSION, **self.report))
 
         for region in self.report['regions']:
             report += textwrap.dedent("""
