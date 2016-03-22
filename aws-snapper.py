@@ -81,9 +81,11 @@ class AwsSnapper(object):
         self._loaded = True
 
     def configure_from_lambda_event(self, event_details):
-        for setting in ['tag_prefix', 'sns_arn', 'ec2_regions']:
+        for setting in DEFAULTS.keys():
             if setting in event_details:
                 self.__setattr__(setting, event_details[setting])
+            else:
+                self.__setattr__(setting, DEFAULTS[setting])
         self._loaded = True
 
     def scan_and_snap(self, region):
