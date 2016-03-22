@@ -1,8 +1,4 @@
-# Running aws-snapper on AWS Lambda
-
-Lambda is a code execution service offered by Amazon Web Services. When you
-configure a single Lambda behavior, it runs based on events you specify without
-needing a server of any kind.
+# Lambda Mode
 
 ## Vocabulary
 
@@ -167,6 +163,11 @@ Note that this will simply cause your script to be run -- it will not provide
 any particular input.
 
 ### Configuration
+
+> **NOTE**: This section is slightly deprecated. It's probably best to edit
+> the DEFAULTS at the top of the script when you paste it into Lambda. The
+> script will still parse a JSON event object but it's easier to change
+> schedules if it just receives the default CloudWatch event.
 
 Now that the aws-snapper script is running on a schedule, you need to specify
 the inputs to the script when it is run. Confusingly, this is set in the
