@@ -13,9 +13,7 @@ DEFAULTS = {
     'ec2_regions': [
         'us-east-1'
     ],
-    'tag_prefix': [
-        'autosnap'
-    ],
+    'tag_prefix': 'autosnap',
     'sns_arn': None,
     'schedule_name': None,
 }
