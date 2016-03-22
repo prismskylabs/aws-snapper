@@ -1,159 +1,240 @@
 # aws-snapper
 
-This is a script for managing automated snapshots of disk volumes 
-attached to EC2 instances. It was originally a fork of [x-lhan's 
-aws-autosnap](https://github.com/x-lhan/aws-autosnap), itself a 
-fork of [evannuil's 
-aws-snapshot-tool](https://github.com/evannuil/aws-snapshot-tool). 
-Both of these have been incredibly useful for many people over the 
+This is a script for managing automated snapshots of disk volumes
+attached to EC2 instances. It was originally a fork of [x-lhan's
+aws-autosnap](https://github.com/x-lhan/aws-autosnap), itself a
+fork of [evannuil's
+aws-snapshot-tool](https://github.com/evannuil/aws-snapshot-tool).
+Both of these have been incredibly useful for many people over the
 years.
 
-aws-snapper is intended to be run as a daily task through `cron` or 
-similar means. When it runs, it scans for instances that you have 
-marked for backup and creates snapshots accordingly. It will also 
-delete old snapshots based on your preferences.
+aws-snapper is intended to be run as an AWS Lambda job triggered by
+an AWS CloudWatch schedule (it can also be run on the command line
+triggered by cron/atd but Lambda is *strongly* recommended).
 
-This version has been converted to use the boto3 package (which is 
-used by the current official AWS CLI) and therefore requires 
-slightly less effort to configure than the earlier tools.
+When it runs, it scans for EC2 instances that have specific tags and
+creates snapshots of those instances' EBS volumes. It will delete
+old snapshots that it created.
 
-## Usage
+This version uses the boto3 package (which is used by the current
+official AWS CLI) and therefore requires slightly less effort to
+configure than the earlier tools.
 
-> **Note:** You really, really, really should be running this as an 
-> AWS Lambda function. [Details on how to set that up in a separate 
-> README.](LAMBDA.md) The remainder of this document describes how 
-> to run it as a plain old script.
-> 
-> AWS Lambda lets you run the snapshot job as needed without a 
-> server, virtual machine, or EC2 instance. It just runs In The 
-> Cloud magically. It costs a **fraction of a cent per month** to 
-> run this multiple times per day, compared to the 
-> dollars-per-month for the least expensive EC2 instance.
+# Running aws-snapper on the command line
+
+For those who would like to run this on a traditional server using
+cron or atd, see [the old documentation](README_COMMANDLINE.md).
+
+If you are comfortable with the AWS console and want to snapshot
+your instances without launching *another* instance, continue
+reading this document.
+
+# Running aws-snapper on AWS Lambda
+
+Lambda is a code execution service offered by Amazon Web Services. When you
+configure a single Lambda behavior, it runs based on events you specify without
+needing a server of any kind.
+
+## Vocabulary
+
+This is a quick primer on AWS Lambda terminology:
+
+* Lambda Function - A **named** piece of source code (Java, Node.js or Python
+for now) that runs essentially in a vacuum. This has absolutely no relation to the
+common programming pattern of "lambda functions". Amazon just thought the name
+would be cute to use.
+
+* Handler - A function in the above code that is the entry point to the Lambda
+Function.
+
+* Event Source - A way to trigger a single run of the Lambda Function. Current
+sources include creating/deleting an object in S3, receiving a message on an
+SNS topic, or (the one we're concerned with) a regular schedule provided by
+CloudWatch.
+
+## Configuration
+
+This assumes a basic familiarity with the AWS web console. It can also be set
+up using the AWS CLI if you're so inclined.
+
+To set up aws-snapper as a Lambda Function, you will have to:
+* Create a Lambda Function and provide it the aws-snapper code
+* Authorize that Lambda Function to perform AWS operations on your account
+* Create an event (or several) that trigger the Lambda Function
+
+### Notification
+
+(Optional) Create an AWS SNS Topic to allow the script to send you a status
+update when it completes.
+
+You will need to subscribe to this topic using some notification method
+(probably email). For more information,
+[see the AWS SNS documentation](http://docs.aws.amazon.com/sns/latest/dg/CreateTopic.html).
 
 ### Authentication
 
-aws-snapper authenticates using 
-[botocore](http://botocore.readthedocs.org), so there's no reason 
-to give it credentials directly.
+Create an AWS IAM Role that allows the AWS Lambda service to call AWS services.
 
-If you are running it on an EC2 instance, you should run it from an 
-instance with an instance profile associated with an IAM role; This 
-way, no credentials will be stored on the EC2 instance itself. See 
-[IAM Roles for Amazon 
-EC2](http://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html) 
-for more details.
+Note that if you were previously using an IAM Role for running aws-snapper the
+"old" way (an EC2 Instance Profile) you will still need to create a new Role,
+but you can re-use your Policy document.
 
-If you are running it on a non-EC2 platform, you should install the 
-AWS CLI and use its `aws configure` to store your Access Key ID and 
-Secret Access Key in `~/.aws`. See ["Configuring the AWS Command 
-Line 
-Interface"](http://docs.aws.amazon.com/cli/latest/userguide/cli-chap-getting-started.html) 
-for more details.
+**If you do not already have an aws-snapper policy** document:
 
-### Permissions
+1. Go to the AWS IAM console.
 
-The IAM user (or IAM role associated with your EC2 instance 
-profile) will need permission to retrieve tags on EC2 instances, 
-volumes, and snapshots; create and delete snapshots; and modify 
-snapshot tags.
+2. Select "Policies".
 
-If you chose to generate SNS reports, the user/role will also need 
-permission to publish to the configured SNS topic.
+3. Click "Create Policy".
 
-An example IAM policy for all these privileges is included with 
-this package.
+4. Click "Select" next to "Create Your Own Policy".
 
-### Region(s)
+5. Enter a Policy Name and Description (anything you like) and for the Policy
+Document field, paste the contents of [iam.policy.sample](iam.policy.sample). Be
+sure to set your account number, EC2 regions, and SNS ARN in place of the bogus
+values in the sample policy.
 
-aws-snapper will default to using the region you specify as the AWS 
-CLI default when running `aws configure`. You may override this on 
-the command line by providing a Region or list of Regions to 
-manage.
+To create the Lambda Role:
 
-Each Region you include will be checked for pending snapshots and 
-create them as necessary.
+1. Go to the AWS IAM console.
 
-### Snapshot Schedule
+2. Select "Roles".
 
-Configuration of the snapshot schedule is performed on EC2 
-resources themselves: instances and volumes.
+3. Click "Create New Role".
 
-Any instance you would like snapshotted should have a tag with a 
-key of `autosnap` and a value of the backup frequency in days (e.g. 
-`1` for daily, `7` for weekly) and another tag with a key of 
-`autosnap_retain` with a value of the number of snapshots to keep 
-(e.g. `30` for a full month of nightly snapshots).
+4. Name the Role (it can be anything, but something like "lambda-aws-snapshot"
+might make it easy to identify later). Click "Next Step".
 
-All volumes attached to an instance with a snapshot schedule will 
-be snapshotted on that schedule, unless the volumes have tags that 
-override the instance's values. For example, if an instance has an 
-`autosnap_retain` value of `7` but one of its volumes has an 
-`autosnap_retain` of `20`, twenty snapshots of that volume will be 
-kept and seven of the other volumes.
+5. On the "Select Role Type" page, select "AWS Lambda" and click "Next Step".
 
-Any resource tagged with a key of `autosnap_ignore` (the value 
-doesn't matter) will be skipped by aws-snapper. This can be used to 
-avoid scanning of instances with many volumes, or to skip specific 
-volumes on an instance that has a snapshot schedule (such as the 
-root device on a database server).
+6. On the "Attach Policy" page, select the checkbox next to the Policy document
+you created earlier and click "Next Step".
 
-Note: aws-snapper will not delete any snapshots that it did not 
-make itself (as indicated by the `snapshot_tool` tag on snapshots), 
-nor will it include them in the retention/frequency calculations.
+7. Review the options and click "Create Role".
 
-### SNS (optional)
+(Remember the Role name for later.)
 
-You may also configure aws-snapper to send snapshot reports when it 
-has completed. It will publish the reports to an SNS topic of your 
-choice, provided it has permission to do so.
+### Lambda Function
 
-SNS can be configured to send to email, webhooks, or other 
-destinations.
+Create an AWS Lambda Function that contains the aws-snapper code.
 
-To use SNS reporting, make sure the credentials (`~/.aws`) or EC2 
-IAM role can publish to the SNS topic and specify the topic using 
-its ARN on the command line with `--sns-arn 
-arn:aws:sns:region:account-id:topicname`.
+1. Go to the AWS Lambda console. (Note that this is not available in all regions
+but there's no reason you have to run the script in the region it will be
+backing up.)
 
-**Note:** If you have not configured a default AWS CLI region 
-(using the `aws configure` command) or the SNS topic is in a region 
-other than the AWS CLI default, you must also specify its region on 
-the command line with `--sns-region`.
+2. Select "Create A Lambda Function" (or "Get Started Now" in the likely event
+that you don't already have a Lambda Function created.)
 
-### Tag Prefix (optional)
+3. Search for the "hello-world-python" blueprint and select it.
 
-aws-snapper uses AWS resource tags to keep track of instances, 
-volumes, and snapshots it is managing. By default, the Key for 
-these tags is prefixed with `autosnap`. If you would like the 
-script to use another prefix, you can change it on the command line 
-with `--prefix foo`.
+4. Name the Function anything you like. Optionally enter a description.
 
-If you use this option, the configuration tags on instances and 
-volumes will be changed to e.g. `foo_retain` and `foo_ignore`.
+5. Paste the source code for [aws-snapper.py](aws-snapper.py) into the code
+entry field.
 
-This option allows multiple instances of aws-snapper to operate on 
-the same Region without interfering with each other.
+6. For the "Handler" field enter `YourFunctionName.lambda_handler` where
+YourFunctionName is the name you gave the Lambda Function.
 
-## Examples
+7. Select the IAM Role you created under "Role".
 
-Run across all instances in the default AWS CLI region:
+8. "Memory" can be set to the minimum (128mb). Timeout will likely need some
+tuning later but 30 sec is typical for the script to finish.  The "VPC" field
+should be left as "No VPC," since the script will interact with your EBS volumes
+through the AWS API and not through the EC2 instances themselves.
 
-    $ ./aws-snapper.py
+9. Click "Next".
 
-Same as above, for instances in multiple Regions:
+10. Review the settings and click "Create function".
 
-    $ ./aws-snapper.py us-west-2 eu-central-1 ap-northeast-1
+You now have a function that can be triggered by other sources. The triggers
+will be configured in the next step.
 
-Run across instances in default Region using a custom tag prefix:
+### Test (optional)
 
-    $ ./aws-snapper.py --prefix QA_snaps
+At this point you can run the script manually by clicking "Test". A dialog will
+appear the first time you try to test the script asking for input values.
 
-Use default settings but send a report via SNS when finished:
+Paste a JSON document that contains the same configuration values you would
+otherwise provide to the command line. A sample JSON config is
+[saved in the repository](config.json). As in the Policy Document above, be
+sure to specify your own values for SNS ARN and regions as appropriate.
 
-    $ ./aws-snapper.py --sns-arn 
-arn:aws:sns:us-east-1:123456789012:maintenance-alerts
+Then click "Save and test" to run the script once. If you later need to change
+the configuration for the test event (it will default to re-using the JSON you
+entered the first time), click "Actions" and then "Configure test event".
 
-Everything at once:
+### Events
 
-    $ ./aws-snapper.py --sns-arn arn:aws:sns:us-east-1:123456789012:maintenance-alerts
-            --sns-region us-east-1 --prefix StagingSnapshotter eu-central-1 ap-northeast-1
+Amazon's CloudWatch service (used primarily for monitoring AWS services)
+generates regularly scheduled events using either frequency (e.g. "run this
+every 45 minutes") or a cron-style schedule (e.g. "run this every Monday at
+2:04 PM").
+
+To configure an event trigger:
+
+1. Go to the AWS Lambda console.
+
+2. Select your Lambda Function from the list.
+
+3. Click on the "Event sources" tab.
+
+4. Click "Add event source".
+
+5. Select "CloudWatch Events - Schedule" from the "Event source type".
+
+6. Provide a name for the rule and optionally a description.
+
+7. For the Schedule expression, enter a schedule using their syntax. A
+peculiarity of the cron syntax in this system is that the day of the week field
+has to be ? instead of *.  For example "cron(05 00 * * ? *)" will run at 00:05
+UTC every day.
+
+8. Choose "Enable now" or "Enable later" as suits your situation. (To toggle
+this setting later, click "Enabled" or "Disabled" on the event list.)
+
+9. Click "Submit".
+
+Note that this will simply cause your script to be run -- it will not provide
+any particular input.
+
+### Configuration
+
+> **NOTE**: This section is slightly deprecated. It's probably best to edit
+> the DEFAULTS at the top of the script when you paste it into Lambda. The
+> script will still parse a JSON event object but it's easier to change
+> schedules if it just receives the default CloudWatch event.
+
+Now that the aws-snapper script is running on a schedule, you need to specify
+the inputs to the script when it is run. Confusingly, this is set in the
+CloudWatch console for now.
+
+If you are still on the Event Sources tab, you can click the "Scheduled
+Event:..." entry to skip to step 4 of this section.
+
+1. Go to the AWS CloudWatch console. (Make sure your selected region is the
+same one where you created your AWS Lambda Function.)
+
+2. Click on "Rules" under the "Events" heading.
+
+3. Select the Rule you created in step 7 of the previous section.
+
+4. Click "Actions" (it's in the top left) and then "Edit".
+
+5. If the schedule you created in the previous section is Enabled, there will
+be a Lambda Function listed under the Targets heading. If you set the schedule
+to Disabled, you will need to select "Add target" then "Lambda function" then
+select the Function name from the list.
+
+6. Expand the "Configure input" menu.
+
+7. Select "Constant (JSON text)" and enter your JSON configuration (on a single
+line) into the provided field.
+
+8. Click "Configure details".
+
+9. Review the settings and click "Update rule".
+
+Note that you can create multiple schedules (or one schedule with multiple
+targets) that re-use the same Lambda Function with different configuration
+values to perform different snapshot behaviors. By using unique `prefix`
+settings, snapshot run will ignore the others.
