@@ -5,6 +5,7 @@ import datetime
 import textwrap
 import logging
 
+import pytz
 import boto3
 
 
@@ -16,6 +17,7 @@ DEFAULTS = {
     'tag_prefix': 'autosnap',
     'sns_arn': None,
     'schedule_name': 'Default',
+    'interval': 86400,
 }
 
 
@@ -35,9 +37,10 @@ class AwsSnapper(object):
         self.ec2_regions = list()
         self.sns_arn = None
         self.schedule_name = None
+        self.interval = 0
 
         self.report = {
-            'started': datetime.datetime.now(),
+            'started': datetime.datetime.now(pytz.utc),
             'finished': None,
             'regions': dict(),
         }
@@ -61,6 +64,9 @@ class AwsSnapper(object):
         parser.add_argument('--name', dest='schedule_name', action='store',
                             default=DEFAULTS['schedule_name'], metavar='NAME',
                             help='Job name to use for report emails')
+        parser.add_argument('--interval', dest='interval', action='store',
+                            default=DEFAULTS['interval'], metavar='SECONDS',
+                            help='Run interval (seconds)')
         parser.add_argument('--version', action='version',
                             version='AwsSnapper v{}'.format(VERSION))
         settings = parser.parse_args()
@@ -68,6 +74,7 @@ class AwsSnapper(object):
         self.sns_arn = settings.sns_arn
         self.tag_prefix = settings.tag_prefix
         self.schedule_name = settings.schedule_name
+        self.interval = int(settings.interval)
 
         for region in settings.regions:
             self.ec2_regions.append(region)
@@ -92,7 +99,6 @@ class AwsSnapper(object):
         tag_interval = '{prefix}'.format(prefix=self.tag_prefix)
         tag_retain = '{prefix}_retain'.format(prefix=self.tag_prefix)
         tag_ignore = '{prefix}_ignore'.format(prefix=self.tag_prefix)
-        today = datetime.date.today()
 
         if region is not None:
             ec2 = boto3.resource('ec2', region_name=region)
@@ -106,6 +112,7 @@ class AwsSnapper(object):
             i_snap_interval = 0
             i_snap_retain = 0
             i_name = instance.id
+            i_name_only = i_name
             if i_tags:
                 for i_tag in i_tags:
                     if i_tag['Key'] == tag_ignore:
@@ -122,8 +129,10 @@ class AwsSnapper(object):
 
             self.report['regions'][region]['instances_managed'] += 1
 
-            volumes = ec2.volumes.filter(Filters=[{'Name': 'attachment.instance-id',
-                                                   'Values': [instance.id]}])
+            volumes = ec2.volumes.filter(
+                Filters=[{'Name': 'attachment.instance-id',
+                          'Values': [instance.id]}]
+            )
             for volume in volumes:
                 v_tags = volume.tags
                 v_snap_interval = i_snap_interval
@@ -144,15 +153,19 @@ class AwsSnapper(object):
                     continue
 
                 if v_snap_interval == 0 or v_snap_retain == 0:
-                    self.report['regions'][region]['problem_volumes'].append(volume.id)
+                    self.report['regions'][region]['problem_volumes'].append(
+                        volume.id
+                    )
                     continue
 
                 self.report['regions'][region]['volumes_managed'] += 1
 
-                snap_collection = ec2.snapshots.filter(Filters=[{'Name': 'volume-id',
-                                                                 'Values': [volume.id]},
-                                                                {'Name': 'tag:snapshot_tool',
-                                                                 'Values': [self.tag_prefix]}])
+                snap_collection = ec2.snapshots.filter(
+                    Filters=[{'Name': 'volume-id',
+                              'Values': [volume.id]},
+                             {'Name': 'tag:snapshot_tool',
+                              'Values': [self.tag_prefix]}]
+                )
                 snap_list = list(snap_collection)
 
                 snap_needed = False
@@ -161,20 +174,31 @@ class AwsSnapper(object):
                 else:
                     snap_list.sort(key=lambda s: s.start_time, reverse=True)
                     interval = int(v_snap_interval)
-                    expected = snap_list[0].start_time.date() + datetime.timedelta(days=interval)
-                    if today >= expected:
+
+                    # the -15 is to allow wiggle room for previous run
+                    # starting late due to scheduler load
+                    expected = (snap_list[0].start_time +
+                                datetime.timedelta(
+                                    seconds=self.interval * interval - 15
+                                ))
+                    if self.report['started'] >= expected:
                         snap_needed = True
 
                 if snap_needed:
-                    description = '{}: {} from {} of {}'.format(self.tag_prefix, v_name, today, i_name)
-                    short_description = '{}-{}-{}'.format(today, v_name, i_name_only)
+                    description = '{}: {} from {} of {}'.format(
+                        self.tag_prefix, v_name, self.report['started'], i_name
+                    )
+                    short_description = '{}-{}-{}'.format(
+                        self.report['started'], v_name, i_name_only
+                    )
                     snapshot = volume.create_snapshot(Description=description)
-                    snapshot.create_tags(Tags=[{'Key': 'Name', 'Value': short_description},
-                                               {'Key': 'snapshot_tool', 'Value': self.tag_prefix}])
+                    snapshot.create_tags(
+                        Tags=[{'Key': 'Name',
+                               'Value': short_description},
+                              {'Key': 'snapshot_tool',
+                               'Value': self.tag_prefix}]
+                    )
                     self.report['regions'][region]['snaps_created'] += 1
-                else:
-                    # too soon
-                    pass
 
                 while len(snap_list) > int(v_snap_retain):
                     snapshot_to_delete = snap_list.pop()
@@ -182,7 +206,7 @@ class AwsSnapper(object):
                     self.report['regions'][region]['snaps_deleted'] += 1
 
     def generate_report(self):
-        self.report['finished'] = datetime.datetime.now()
+        self.report['finished'] = datetime.datetime.now(pytz.utc)
 
         report = textwrap.dedent("""\
             AWS Snapshot Report
@@ -207,7 +231,8 @@ class AwsSnapper(object):
                 """.format(region=region, **self.report['regions'][region]))
 
             if len(self.report['regions'][region]['problem_volumes']) > 0:
-                report += '> \n> \n> Volumes with tag combinations preventing snapshot management:\n'
+                report += '> \n> \n> Volumes with tag combinations preventing' \
+                          ' snapshot management:\n'
                 for vol in self.report['regions'][region]['problem_volumes']:
                     report += '>   * {}\n'.format(vol)
 
@@ -216,8 +241,8 @@ class AwsSnapper(object):
             sns = boto3.resource('sns', region_name=region)
             topic = sns.Topic(self.sns_arn)
             topic.publish(Message=report, Subject='AWS Snapshot Report')
-            logging.warn('Snapshot run completed at {}. Report sent via SNS.'.format(
-                self.report['finished']))
+            logging.warn('Snapshot run completed at {}. Report '
+                         'sent via SNS.'.format(self.report['finished']))
         else:
             logging.warn(report)
 
@@ -229,10 +254,10 @@ class AwsSnapper(object):
 
 
 def lambda_handler(event, context):
-    snapper = AwsSnapper()
-    snapper.configure_from_lambda_event(event)
-    snapper.daily_run()
+    lambda_snapper = AwsSnapper()
+    lambda_snapper.configure_from_lambda_event(event)
+    lambda_snapper.daily_run()
 
 if __name__ == '__main__':
-    s = AwsSnapper()
-    s.daily_run()
+    main_snapper = AwsSnapper()
+    main_snapper.daily_run()
