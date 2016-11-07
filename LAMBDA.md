@@ -27,24 +27,23 @@ To set up aws-snapper as a Lambda Function, you will have to:
 * Authorize that Lambda Function to perform AWS operations on your account
 * Create an event (or several) that trigger the Lambda Function
 
-### Notification
+### Notification (Optional)
 
-(Optional) Create an AWS SNS Topic to allow the script to send you a status
-update when it completes.
+Create an AWS SNS Topic to allow the script to send you a status update
+when it completes.
 
 You will need to subscribe to this topic using some notification method
 (probably email). For more information,
 [see the AWS SNS documentation](http://docs.aws.amazon.com/sns/latest/dg/CreateTopic.html).
 
-### Authentication
+### Permissions
 
 Create an AWS IAM Role that allows the AWS Lambda service to call AWS services.
 
-Note that if you were previously using an IAM Role for running aws-snapper the
-"old" way (an EC2 Instance Profile) you will still need to create a new Role,
-but you can re-use your Policy document.
+(Note that an existing IAM Role for running the script on a server with
+an EC2 Instance Profile will not work for AWS Lambda execution.)
 
-**If you do not already have an aws-snapper policy** document:
+**If you do not already have a Customer Managed Policy** for aws-snapper:
 
 1. Go to the AWS IAM console.
 
@@ -72,9 +71,10 @@ might make it easy to identify later). Click "Next Step".
 
 5. On the "Select Role Type" page, select "AWS Lambda" and click "Next Step".
 
-6. On the "Attach Policy" page, select the checkbox next to the Policy document
-you created earlier and click "Next Step".
-
+6. On the "Attach Policy" page, select the checkbox next to the Customer
+Managed Policy document you created earlier. If you would like to use
+CloudWatch Logs to monitor the script, also select the checkbox next t
+the AWS Managed Policy "AWSLambdaBasicExecutionRole". Click "Next Step"
 7. Review the options and click "Create Role".
 
 (Remember the Role name for later.)
@@ -87,29 +87,32 @@ Create an AWS Lambda Function that contains the aws-snapper code.
 but there's no reason you have to run the script in the region it will be
 backing up.)
 
-2. Select "Create A Lambda Function" (or "Get Started Now" in the likely event
+2. Click "Create A Lambda Function" (or "Get Started Now" in the likely event
 that you don't already have a Lambda Function created.)
 
-3. Search for the "hello-world-python" blueprint and select it.
+3. On the "Select blueprint" screen, choose "Blank Function".
 
-4. Name the Function anything you like. Optionally enter a description.
+4. Bypass the "Configure triggers" step for now.
 
-5. Paste the source code for [aws-snapper.py](aws-snapper.py) into the code
+5. On the "Configure function" screen:
+
+    1. Enter anything you like for the Name and Description fields.
+    2. Select "Python 2.7" for the Runtime field.
+    3. Paste the source code of [aws-snapper.py](aws-snapper.py) into the code
 entry field.
+    4. For the Handler field enter `YourFunctionName.lambda_handler` where
+        YourFunctionName is the name you gave the Lambda Function.
+    5. Select "Choose an existing role" for the Role field.
+    6. Select the IAM Role you created above for the Existing role field.
+    7. Set Memory to the minimum (128MB). Set Timeout to 30 sec. (This
+        can be tuned later using execution stats from CloudWatch)
+    8. The "VPC" field should be left as "No VPC," since the script will
+        interact with your EBS volumes through the AWS API and not via
+        the EC2 instances themselves.
 
-6. For the "Handler" field enter `YourFunctionName.lambda_handler` where
-YourFunctionName is the name you gave the Lambda Function.
+6. Click "Next".
 
-7. Select the IAM Role you created under "Role".
-
-8. "Memory" can be set to the minimum (128mb). Timeout will likely need some
-tuning later but 30 sec is typical for the script to finish.  The "VPC" field
-should be left as "No VPC," since the script will interact with your EBS volumes
-through the AWS API and not through the EC2 instances themselves.
-
-9. Click "Next".
-
-10. Review the settings and click "Create function".
+7. Review the settings and click "Create function".
 
 You now have a function that can be triggered by other sources. The triggers
 will be configured in the next step.
@@ -128,7 +131,7 @@ Then click "Save and test" to run the script once. If you later need to change
 the configuration for the test event (it will default to re-using the JSON you
 entered the first time), click "Actions" and then "Configure test event".
 
-### Events
+### Schedule
 
 Amazon's CloudWatch service (used primarily for monitoring AWS services)
 generates regularly scheduled events using either frequency (e.g. "run this
@@ -203,3 +206,10 @@ Note that you can create multiple schedules (or one schedule with multiple
 targets) that re-use the same Lambda Function with different configuration
 values to perform different snapshot behaviors. By using unique `prefix`
 settings, snapshot run will ignore the others.
+
+### Tags
+
+The script scans your EC2 instances and EBS volumes for specific Tags to
+determine which volumes to snapshot and how to delete old snapshots.
+
+More information about configuring tags is [in a separate document](TAGS.md).
