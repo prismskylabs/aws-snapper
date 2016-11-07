@@ -19,12 +19,11 @@ requires slightly less effort to configure than the earlier tools.
 
 ## Permissions
 
-The IAM user (or IAM role associated with your EC2 instance
-profile or AWS Lambda function) will need permission to retrieve
-tags on EC2 instances, volumes, and snapshots; create and delete
-snapshots; and modify snapshot tags.
+The IAM Role used by the AWS Lambda function will need permission to
+retrieve tags on EC2 instances, volumes, and snapshots; create and
+delete snapshots; and modify snapshot tags.
 
-If you chose to generate SNS reports, the user/role will also need
+If you chose to generate SNS reports, the Role will also need
 permission to publish to the configured SNS topic.
 
 An example IAM policy for all these privileges is [included with
@@ -49,11 +48,14 @@ you specify **without needing a server of any kind**.
 
 For more detailed procedure see [the Lambda instructions](LAMBDA.md).
 
-1. Create an IAM Role that can be assumed by AWS Lambda. Apply
-a policy to it similar to the example.
+1. IAM setup: Create an Customer Managed Policy using the sample
+policy document in this repository. Create an IAM Role and apply
+the Customer Managed Policy to it. If you would like to collect
+CloudWatch logs from the script, also attach the AWS Managed Policy
+"AWSLambdaBasicExecutionRole" to the Role.
 
-2. Create a new AWS Lambda function with the contents of
-aws-snapper.py. Configure the DEFAULTS as appropriate for your
+2. Lambda setup: Create a new AWS Lambda function with the contents
+of `aws-snapper.py`. Configure the DEFAULTS as appropriate for your
 environment.
 
 3. Add a new CloudWatch Schedule Trigger for the Lambda function
