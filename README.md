@@ -28,7 +28,7 @@ If you chose to generate SNS reports, the user/role will also need
 permission to publish to the configured SNS topic.
 
 An example IAM policy for all these privileges is [included with
-this package](iam.policy.sample).
+this package](iam.policy.json).
 
 ## Command Line Mode
 

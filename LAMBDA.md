@@ -55,7 +55,7 @@ but you can re-use your Policy document.
 4. Click "Select" next to "Create Your Own Policy".
 
 5. Enter a Policy Name and Description (anything you like) and for the Policy
-Document field, paste the contents of [iam.policy.sample](iam.policy.sample). Be
+Document field, paste the contents of [iam.policy.json](iam.policy.sample). Be
 sure to set your account number, EC2 regions, and SNS ARN in place of the bogus
 values in the sample policy.
 
